@@ -318,20 +318,18 @@ struct GitHeaderEntry {
 impl GitHeaderEntry {
     pub fn contains(&self, status_entry: &GitStatusEntry, repo: &Repository) -> bool {
         let this = &self.header;
-        let status = status_entry.status;
+        let is_conflict = repo.had_conflict_on_last_merge_head_change(&status_entry.repo_path);
         match this {
-            Section::Conflict => {
-                repo.had_conflict_on_last_merge_head_change(&status_entry.repo_path)
-            }
-            Section::Tracked => !status.is_created(),
-            Section::New => status.is_created(),
+            Section::Conflict => is_conflict,
+            Section::Tracked => !is_conflict && status_entry.staging.has_staged(),
+            Section::New => !is_conflict && !status_entry.staging.has_staged(),
         }
     }
     pub fn title(&self) -> &'static str {
         match self.header {
             Section::Conflict => "Conflicts",
-            Section::Tracked => "Tracked",
-            Section::New => "Untracked",
+            Section::Tracked => "Staged",
+            Section::New => "Unstaged",
         }
     }
 }
@@ -710,7 +708,7 @@ struct BulkStaging {
     anchor: RepoPath,
 }
 
-const MAX_PANEL_EDITOR_LINES: usize = 6;
+const MAX_PANEL_EDITOR_LINES: usize = 3;
 
 pub(crate) fn commit_message_editor(
     commit_message_buffer: Entity<Buffer>,
@@ -3661,7 +3659,6 @@ impl GitPanel {
         for entry in repo.cached_status() {
             self.changes_count += 1;
             let is_conflict = repo.had_conflict_on_last_merge_head_change(&entry.repo_path);
-            let is_new = entry.status.is_created();
             let staging = entry.status.staging();
 
             if let Some(pending) = repo.pending_ops_for_path(&entry.repo_path)
@@ -3687,7 +3684,7 @@ impl GitPanel {
 
             if group_by_status && is_conflict {
                 conflict_entries.push(entry);
-            } else if group_by_status && is_new {
+            } else if group_by_status && !staging.has_staged() {
                 new_entries.push(entry);
             } else {
                 changed_entries.push(entry);
@@ -3851,17 +3848,18 @@ impl GitPanel {
     }
 
     fn header_state(&self, header_type: Section) -> ToggleState {
-        let (staged_count, count) = match header_type {
-            Section::New => (self.new_staged_count, self.new_count),
-            Section::Tracked => (self.tracked_staged_count, self.tracked_count),
-            Section::Conflict => (self.conflicted_staged_count, self.conflicted_count),
-        };
-        if staged_count == 0 {
-            ToggleState::Unselected
-        } else if count == staged_count {
-            ToggleState::Selected
-        } else {
-            ToggleState::Indeterminate
+        match header_type {
+            Section::Tracked => ToggleState::Selected,
+            Section::New => ToggleState::Unselected,
+            Section::Conflict => {
+                if self.conflicted_staged_count == 0 {
+                    ToggleState::Unselected
+                } else if self.conflicted_count == self.conflicted_staged_count {
+                    ToggleState::Selected
+                } else {
+                    ToggleState::Indeterminate
+                }
+            }
         }
     }
 
@@ -4530,7 +4528,6 @@ impl GitPanel {
         let active_repository = self.active_repository.clone()?;
         let panel_editor_style = panel_editor_style(true, window, cx);
         let enable_coauthors = self.render_co_authors(cx);
-        let editor_focus_handle = self.commit_editor.focus_handle(cx);
         let branch = active_repository.read(cx).branch.clone();
         let head_commit = active_repository.read(cx).head_commit.clone();
 
@@ -4653,66 +4650,6 @@ impl GitPanel {
                                 cx.stop_propagation();
                             })
                             .child(EditorElement::new(&self.commit_editor, panel_editor_style)),
-                    )
-                    .child(
-                        v_flex()
-                            .absolute()
-                            .top_2()
-                            .right_2()
-                            .gap_px()
-                            .opacity(0.6)
-                            .hover(|s| s.opacity(1.0))
-                            .child(
-                                IconButton::new("expand-commit-editor", IconName::MaximizeAlt)
-                                    .icon_size(IconSize::Small)
-                                    .tooltip({
-                                        move |_window, cx| {
-                                            Tooltip::for_action_in(
-                                                "Open Commit Modal",
-                                                &git::ExpandCommitEditor,
-                                                &editor_focus_handle,
-                                                cx,
-                                            )
-                                        }
-                                    })
-                                    .on_click(cx.listener({
-                                        move |_, _, window, cx| {
-                                            window.dispatch_action(
-                                                git::ExpandCommitEditor.boxed_clone(),
-                                                cx,
-                                            )
-                                        }
-                                    })),
-                            )
-                            .child({
-                                let (icon, label) = if self.commit_editor_expanded {
-                                    (IconName::Minimize, "Collapse Commit Editor")
-                                } else {
-                                    (IconName::Maximize, "Expand Commit Editor")
-                                };
-                                let focus_handle = self.focus_handle.clone();
-
-                                IconButton::new("fill-commit-editor", icon)
-                                    .icon_size(IconSize::Small)
-                                    .tooltip({
-                                        move |_window, cx| {
-                                            Tooltip::for_action_in(
-                                                label,
-                                                &git::ToggleFillCommitEditor,
-                                                &focus_handle,
-                                                cx,
-                                            )
-                                        }
-                                    })
-                                    .on_click(cx.listener({
-                                        move |_, _, window, cx| {
-                                            window.dispatch_action(
-                                                git::ToggleFillCommitEditor.boxed_clone(),
-                                                cx,
-                                            )
-                                        }
-                                    }))
-                            }),
                     ),
             );
 
@@ -6593,6 +6530,7 @@ impl Render for GitPanel {
                     })
                     .map(|this| match self.active_tab {
                         GitPanelTab::Changes => this
+                            .children(self.render_footer(window, cx))
                             .children(self.render_changes_header(window, cx))
                             .when(!self.commit_editor_expanded, |this| {
                                 this.map(|this| {
@@ -6610,7 +6548,6 @@ impl Render for GitPanel {
                                     }
                                 })
                             })
-                            .children(self.render_footer(window, cx))
                             .when(self.amend_pending, |this| {
                                 this.child(self.render_pending_amend(cx))
                             })
