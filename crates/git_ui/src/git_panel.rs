@@ -3,7 +3,7 @@ use crate::commit_modal::CommitModal;
 use crate::commit_tooltip::{CommitAvatar, CommitTooltip};
 use crate::commit_view::CommitView;
 use crate::git_panel_settings::GitPanelScrollbarAccessor;
-use crate::project_diff::{self, BranchDiff, Diff, ProjectDiff};
+use crate::project_diff::{self, BranchDiff, ProjectDiff};
 use crate::remote_output::{self, RemoteAction, SuccessMessage};
 use crate::{branch_picker, picker_prompt, render_remote_button};
 use crate::{
@@ -4422,81 +4422,6 @@ impl GitPanel {
         })
     }
 
-    fn render_changes_header(
-        &self,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Option<impl IntoElement> {
-        if matches!(self.git_access, GitAccess::No) {
-            return None;
-        }
-
-        self.active_repository.as_ref()?;
-
-        let (text, action, stage, tooltip) =
-            if self.total_staged_count() == self.entry_count && self.entry_count > 0 {
-                ("Unstage All", UnstageAll.boxed_clone(), false, "git reset")
-            } else {
-                ("Stage All", StageAll.boxed_clone(), true, "git add --all")
-            };
-
-        Some(
-            h_flex()
-                .h(Tab::container_height(cx))
-                .w_full()
-                .px_1()
-                .flex_none()
-                .justify_between()
-                .child(
-                    Button::new("changes", "View Diff")
-                        .label_size(LabelSize::Small)
-                        .color(Color::Muted)
-                        .start_icon(
-                            Icon::new(IconName::Diff)
-                                .size(IconSize::Small)
-                                .color(Color::Muted),
-                        )
-                        .tooltip(Tooltip::for_action_title_in(
-                            "View Diff",
-                            &Diff,
-                            &self.focus_handle,
-                        ))
-                        .on_click(|_, _, cx| {
-                            cx.defer(|cx| {
-                                cx.dispatch_action(&Diff);
-                            })
-                        }),
-                )
-                .child(
-                    h_flex()
-                        .gap_1()
-                        .child(self.render_ellipsis_menu("overflow_menu"))
-                        .child(
-                            Button::new("stage_unstage_all", text)
-                                .label_size(LabelSize::Small)
-                                .layer(ElevationIndex::ModalSurface)
-                                .style(ButtonStyle::Filled)
-                                .tooltip(Tooltip::for_action_title_in(
-                                    tooltip,
-                                    action.as_ref(),
-                                    &self.focus_handle,
-                                ))
-                                .disabled(self.entry_count == 0)
-                                .on_click({
-                                    let git_panel = cx.weak_entity();
-                                    move |_, _, cx| {
-                                        git_panel
-                                            .update(cx, |git_panel, cx| {
-                                                git_panel.change_all_files_stage(stage, cx);
-                                            })
-                                            .ok();
-                                    }
-                                }),
-                        ),
-                ),
-        )
-    }
-
     pub(crate) fn render_remote_button(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let branch = self.active_repository.as_ref()?.read(cx).branch.clone();
         if !self.can_push_and_pull(cx) {
@@ -6531,7 +6456,6 @@ impl Render for GitPanel {
                     .map(|this| match self.active_tab {
                         GitPanelTab::Changes => this
                             .children(self.render_footer(window, cx))
-                            .children(self.render_changes_header(window, cx))
                             .when(!self.commit_editor_expanded, |this| {
                                 this.map(|this| {
                                     if let Some(repo) = self.active_repository.clone()
@@ -6980,10 +6904,21 @@ impl RenderOnce for PanelRepoFooter {
                     })
                     .child(branch_selector),
             )
-            .children(if let Some(git_panel) = self.git_panel {
-                git_panel.update(cx, |git_panel, cx| git_panel.render_remote_button(cx))
-            } else {
-                None
+            .child({
+                let mut actions = h_flex().gap_1();
+                if let Some(git_panel) = self.git_panel {
+                    if let Some(remote_button) =
+                        git_panel.update(cx, |git_panel, cx| git_panel.render_remote_button(cx))
+                    {
+                        actions = actions.child(remote_button);
+                    }
+                    actions = actions.child(
+                        git_panel
+                            .read(cx)
+                            .render_ellipsis_menu("git-panel-overflow-menu"),
+                    );
+                }
+                actions
             })
     }
 }
