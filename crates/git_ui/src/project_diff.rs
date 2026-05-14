@@ -79,6 +79,7 @@ pub struct ProjectDiff {
     focus_handle: FocusHandle,
     pending_scroll: Option<PathKey>,
     review_comment_count: usize,
+    single_file_filter: Option<RepoPath>,
     _task: Task<Result<()>>,
     _subscription: Subscription,
 }
@@ -250,9 +251,10 @@ impl ProjectDiff {
         );
         let intended_repo = workspace.project().read(cx).active_repository(cx);
 
-        let existing = workspace
-            .items_of_type::<Self>(cx)
-            .find(|item| matches!(item.read(cx).diff_base(cx), DiffBase::Head));
+        let existing = workspace.items_of_type::<Self>(cx).find(|item| {
+            let pd = item.read(cx);
+            matches!(pd.diff_base(cx), DiffBase::Head) && pd.single_file_filter.is_none()
+        });
         let project_diff = if let Some(existing) = existing {
             existing.update(cx, |project_diff, cx| {
                 project_diff.move_to_beginning(window, cx);
@@ -304,9 +306,10 @@ impl ProjectDiff {
         cx: &mut Context<Workspace>,
     ) {
         telemetry::event!("Git Diff Opened", source = "Agent Panel");
-        let existing = workspace
-            .items_of_type::<Self>(cx)
-            .find(|item| matches!(item.read(cx).diff_base(cx), DiffBase::Head));
+        let existing = workspace.items_of_type::<Self>(cx).find(|item| {
+            let pd = item.read(cx);
+            matches!(pd.diff_base(cx), DiffBase::Head) && pd.single_file_filter.is_none()
+        });
         let project_diff = if let Some(existing) = existing {
             workspace.activate_item(&existing, true, true, window, cx);
             existing
@@ -325,6 +328,85 @@ impl ProjectDiff {
         };
         project_diff.update(cx, |project_diff, cx| {
             project_diff.move_to_project_path(&project_path, window, cx);
+        });
+    }
+
+    pub fn deploy_for_entry(
+        workspace: &mut Workspace,
+        entry: GitStatusEntry,
+        window: &mut Window,
+        cx: &mut Context<Workspace>,
+    ) {
+        telemetry::event!("Git Diff Opened", source = "Git Panel (Single File)");
+        let intended_repo = workspace.project().read(cx).active_repository(cx);
+
+        let existing = workspace.items_of_type::<Self>(cx).find(|item| {
+            let pd = item.read(cx);
+            matches!(pd.diff_base(cx), DiffBase::Head) && pd.single_file_filter.is_some()
+        });
+        let project_diff = if let Some(existing) = existing {
+            workspace.activate_item(&existing, true, true, window, cx);
+            existing.update(cx, |pd, cx| {
+                pd.set_single_file_filter(Some(entry.repo_path.clone()), window, cx);
+            });
+            existing
+        } else {
+            let workspace_handle = cx.entity();
+            let project_diff = cx.new(|cx| {
+                Self::new_with_single_file(
+                    entry.repo_path.clone(),
+                    workspace.project().clone(),
+                    workspace_handle,
+                    window,
+                    cx,
+                )
+            });
+            workspace.add_item_to_active_pane(
+                Box::new(project_diff.clone()),
+                None,
+                true,
+                window,
+                cx,
+            );
+            project_diff
+        };
+
+        if let Some(intended) = &intended_repo {
+            let needs_switch = project_diff
+                .read(cx)
+                .branch_diff
+                .read(cx)
+                .repo()
+                .map_or(true, |current| current.read(cx).id != intended.read(cx).id);
+            if needs_switch {
+                project_diff.update(cx, |project_diff, cx| {
+                    project_diff.branch_diff.update(cx, |branch_diff, cx| {
+                        branch_diff.set_repo(Some(intended.clone()), cx);
+                    });
+                });
+            }
+        }
+
+        project_diff.update(cx, |project_diff, cx| {
+            project_diff.move_to_entry(entry, window, cx);
+        });
+    }
+
+    pub fn set_single_file_filter(
+        &mut self,
+        file: Option<RepoPath>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.single_file_filter == file {
+            return;
+        }
+        self.single_file_filter = file;
+        self.pending_scroll.take();
+        cx.notify();
+        self._task = window.spawn(cx, {
+            let this = cx.weak_entity();
+            async |cx| Self::refresh(this, RefreshReason::StatusesChanged, cx).await
         });
     }
 
@@ -362,7 +444,7 @@ impl ProjectDiff {
                 )
             })?;
             cx.new_window_entity(|window, cx| {
-                Self::new_impl(branch_diff, project, workspace, window, cx)
+                Self::new_impl(branch_diff, project, workspace, None, window, cx)
             })
         })
     }
@@ -375,13 +457,26 @@ impl ProjectDiff {
     ) -> Self {
         let branch_diff =
             cx.new(|cx| branch_diff::BranchDiff::new(DiffBase::Head, project.clone(), window, cx));
-        Self::new_impl(branch_diff, project, workspace, window, cx)
+        Self::new_impl(branch_diff, project, workspace, None, window, cx)
+    }
+
+    fn new_with_single_file(
+        repo_path: RepoPath,
+        project: Entity<Project>,
+        workspace: Entity<Workspace>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let branch_diff =
+            cx.new(|cx| branch_diff::BranchDiff::new(DiffBase::Head, project.clone(), window, cx));
+        Self::new_impl(branch_diff, project, workspace, Some(repo_path), window, cx)
     }
 
     fn new_impl(
         branch_diff: Entity<branch_diff::BranchDiff>,
         project: Entity<Project>,
         workspace: Entity<Workspace>,
+        single_file_filter: Option<RepoPath>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -491,6 +586,7 @@ impl ProjectDiff {
             buffer_diff_subscriptions: Default::default(),
             pending_scroll: None,
             review_comment_count: 0,
+            single_file_filter,
             _task: task,
             _subscription: Subscription::join(
                 branch_diff_subscription,
@@ -823,10 +919,13 @@ impl ProjectDiff {
     ) -> Result<()> {
         let mut path_keys = Vec::new();
         let buffers_to_load = this.update(cx, |this, cx| {
-            let (repo, buffers_to_load) = this.branch_diff.update(cx, |branch_diff, cx| {
+            let (repo, mut buffers_to_load) = this.branch_diff.update(cx, |branch_diff, cx| {
                 let load_buffers = branch_diff.load_buffers(cx);
                 (branch_diff.repo().cloned(), load_buffers)
             });
+            if let Some(filter) = &this.single_file_filter {
+                buffers_to_load.retain(|b| &b.repo_path == filter);
+            }
             let mut previous_buffers = this
                 .multibuffer
                 .read(cx)
@@ -1022,6 +1121,10 @@ impl Item for ProjectDiff {
     }
 
     fn tab_content_text(&self, _detail: usize, cx: &App) -> SharedString {
+        if let Some(filter) = &self.single_file_filter {
+            let name = filter.file_name().unwrap_or("(unnamed)");
+            return format!("Diff: {}", name).into();
+        }
         match self.branch_diff.read(cx).diff_base() {
             DiffBase::Head => "Uncommitted Changes".into(),
             DiffBase::Merge { base_ref } => format!("Changes since {}", base_ref).into(),
@@ -1269,9 +1372,9 @@ impl SerializableItem for ProjectDiff {
                 let branch_diff = cx
                     .new(|cx| branch_diff::BranchDiff::new(diff_base, project.clone(), window, cx));
                 let workspace = workspace.upgrade().context("workspace gone")?;
-                anyhow::Ok(
-                    cx.new(|cx| ProjectDiff::new_impl(branch_diff, project, workspace, window, cx)),
-                )
+                anyhow::Ok(cx.new(|cx| {
+                    ProjectDiff::new_impl(branch_diff, project, workspace, None, window, cx)
+                }))
             })??;
 
             Ok(diff)

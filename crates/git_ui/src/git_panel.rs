@@ -1367,7 +1367,7 @@ impl GitPanel {
 
             self.workspace
                 .update(cx, |workspace, cx| {
-                    ProjectDiff::deploy_at(workspace, Some(entry.clone()), window, cx);
+                    ProjectDiff::deploy_for_entry(workspace, entry.clone(), window, cx);
                 })
                 .ok();
             self.focus_handle.focus(window, cx);
