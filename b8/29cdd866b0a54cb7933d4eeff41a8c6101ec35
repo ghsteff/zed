@@ -1,0 +1,24 @@
+crates/git_ui/src/project_diff.rs
+  s_db54b74c098216::t_cccddd97f3ecb2 615
+  s_db54b74c098216::t_d8100db78df0d4 616-626
+  s_db54b74c098216::t_dfc24d29394867 37
+crates/editor/src/split.rs
+  s_db54b74c098216::t_74da57be1d9366 451-471
+  s_db54b74c098216::t_d49f99327cb7c7 576-577,579-581
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "b829cdd866b0a54cb7933d4eeff41a8c6101ec35",
+  "prompts": {},
+  "sessions": {
+    "s_db54b74c098216": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "8cdc5387-6ffe-4865-b77c-7d0af5739b20",
+        "model": "grok-4.5"
+      },
+      "human_author": "Grant Steffen <gsteffen1203@gmail.com>"
+    }
+  }
+}
