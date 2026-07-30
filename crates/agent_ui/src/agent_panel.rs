@@ -1170,6 +1170,7 @@ pub struct AgentPanel {
     pending_terminal_spawn: Option<TerminalId>,
     new_thread_menu_handle: PopoverMenuHandle<ContextMenu>,
     agent_panel_menu_handle: PopoverMenuHandle<ContextMenu>,
+    recent_chats_menu_handle: PopoverMenuHandle<ContextMenu>,
     _extension_subscription: Option<Subscription>,
     _project_subscription: Subscription,
     zoomed: bool,
@@ -1572,6 +1573,7 @@ impl AgentPanel {
             pending_terminal_spawn: None,
             new_thread_menu_handle: PopoverMenuHandle::default(),
             agent_panel_menu_handle: PopoverMenuHandle::default(),
+            recent_chats_menu_handle: PopoverMenuHandle::default(),
 
             _extension_subscription: extension_subscription,
             _project_subscription,
@@ -5523,6 +5525,111 @@ impl AgentPanel {
         });
     }
 
+    fn render_recent_chats_menu(
+        &self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let focus_handle = self.focus_handle(cx);
+        let panel = cx.entity().downgrade();
+
+        PopoverMenu::new("agent-recent-chats-menu")
+            .trigger_with_tooltip(
+                IconButton::new("agent-recent-chats", IconName::HistoryRerun)
+                    .icon_size(IconSize::Small),
+                {
+                    let focus_handle = focus_handle.clone();
+                    move |_window, cx| {
+                        Tooltip::for_action_in("Recent Chats", &ToggleFocus, &focus_handle, cx)
+                    }
+                },
+            )
+            .anchor(Anchor::TopRight)
+            .with_handle(self.recent_chats_menu_handle.clone())
+            .menu({
+                move |window, cx| {
+                    let focus_handle = focus_handle.clone();
+                    let panel = panel.clone();
+                    Some(ContextMenu::build(window, cx, move |mut menu, _window, cx| {
+                        menu = menu.context(focus_handle.clone());
+
+                        menu = menu.header("Recent Chats");
+
+                        let Some(store) = ThreadMetadataStore::try_global(cx) else {
+                            return menu
+                                .item(ContextMenuEntry::new("No recent chats").disabled(true));
+                        };
+                        let Some(panel_entity) = panel.upgrade() else {
+                            return menu
+                                .item(ContextMenuEntry::new("No recent chats").disabled(true));
+                        };
+
+                        let project = panel_entity.read(cx).project.clone();
+                        let path_list = project.read(cx).default_path_list(cx);
+                        let remote_connection = project.read(cx).remote_connection_options(cx);
+
+                        let store = store.read(cx);
+                        let mut entries: Vec<crate::thread_metadata_store::ThreadMetadata> = store
+                            .entries_for_path(&path_list, remote_connection.as_ref())
+                            .chain(store.entries_for_main_worktree_path(
+                                &path_list,
+                                remote_connection.as_ref(),
+                            ))
+                            .filter(|m| !m.is_draft())
+                            .cloned()
+                            .collect();
+                        entries.sort_by_key(|m| std::cmp::Reverse(m.updated_at));
+                        entries.dedup_by_key(|m| m.thread_id);
+                        entries.truncate(15);
+
+                        if entries.is_empty() {
+                            return menu
+                                .item(ContextMenuEntry::new("No recent chats").disabled(true));
+                        }
+
+                        for metadata in entries {
+                            let title = metadata.display_title();
+                            let timestamp = crate::threads_archive_view::format_history_entry_timestamp(
+                                metadata.updated_at,
+                            );
+                            let label: SharedString =
+                                format!("{}  ·  {}", title, timestamp).into();
+                            let panel = panel.clone();
+                            let metadata = metadata.clone();
+                            menu = menu.item(
+                                ContextMenuEntry::new(label)
+                                    .icon(IconName::Thread)
+                                    .icon_color(Color::Muted)
+                                    .handler(move |window, cx| {
+                                        let metadata = metadata.clone();
+                                        panel
+                                            .update(cx, |panel, cx| {
+                                                panel.load_agent_thread(
+                                                    Agent::from(metadata.agent_id.clone()),
+                                                    metadata.thread_id,
+                                                    Some(metadata.folder_paths().clone()),
+                                                    metadata.title.clone(),
+                                                    true,
+                                                    AgentThreadSource::AgentPanel,
+                                                    window,
+                                                    cx,
+                                                );
+                                            })
+                                            .log_err();
+                                    }),
+                            );
+                        }
+
+                        menu = menu
+                            .separator()
+                            .action("Show All…", Box::new(ToggleWorkspaceSidebar));
+
+                        menu
+                    }))
+                }
+            })
+    }
+
     fn handle_regenerate_thread_title(
         conversation_view: Entity<ConversationView>,
         workspace: WeakEntity<Workspace>,
@@ -6140,6 +6247,7 @@ impl AgentPanel {
                         .gap_1()
                         .children(sandbox_status)
                         .when(can_create_entries, |this| this.child(new_thread_menu))
+                        .child(self.render_recent_chats_menu(window, cx))
                         .child(full_screen_button)
                         .child(self.render_panel_options_menu(window, cx)),
                 )
