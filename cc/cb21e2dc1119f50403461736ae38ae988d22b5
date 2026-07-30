@@ -1,0 +1,19 @@
+.github/workflows/build_macos.yml
+  s_98beeaf02417b2::t_c9f994d5150cee 27-28,63-64,67-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "cccb21e2dc1119f50403461736ae38ae988d22b5",
+  "prompts": {},
+  "sessions": {
+    "s_98beeaf02417b2": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "e69f993f-0994-4f07-a5a8-525e854899ea",
+        "model": "grok-4.5"
+      },
+      "human_author": "Grant Steffen <gsteffen1203@gmail.com>"
+    }
+  }
+}
