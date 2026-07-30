@@ -994,7 +994,7 @@ impl From<&Arc<InitialGraphCommitData>> for CommitHistoryEntry {
     }
 }
 
-const MAX_PANEL_EDITOR_LINES: usize = 6;
+const MAX_PANEL_EDITOR_LINES: usize = 3;
 
 pub(crate) fn commit_message_editor(
     commit_message_buffer: Entity<Buffer>,
@@ -6102,7 +6102,6 @@ impl GitPanel {
                 .cursor_pointer()
                 .id(id)
                 .h_full()
-                .py_1()
                 .gap_1()
                 .flex_1()
                 .justify_center()
@@ -6112,7 +6111,11 @@ impl GitPanel {
                     s.bg(cx.theme().colors().editor_background.opacity(0.6))
                         .border_color(cx.theme().colors().border.opacity(0.6))
                 })
-                .child(Label::new(label.clone()).when(!active, |this| this.color(Color::Muted)))
+                .child(
+                    Label::new(label.clone())
+                        .size(LabelSize::Small)
+                        .when(!active, |this| this.color(Color::Muted)),
+                )
                 .when(show_changes && self.changes_count > 0, |this| {
                     this.child(
                         Label::new(format!("({})", self.changes_count))
