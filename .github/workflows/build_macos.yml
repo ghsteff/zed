@@ -24,7 +24,8 @@ env:
 
 jobs:
   build_macos:
-    runs-on: macos-14
+    # macos-14 ships Xcode 15.4 whose libc++ fails cxx/webrtc C++20 builds.
+    runs-on: macos-15
     timeout-minutes: 360
     steps:
       - name: Free disk space
@@ -59,8 +60,12 @@ jobs:
           # Prefer the full Xcode install when present.
           if [ -d /Applications/Xcode.app ]; then
             sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+          elif [ -d /Applications/Xcode_16.app ]; then
+            sudo xcode-select --switch /Applications/Xcode_16.app/Contents/Developer
           fi
           sudo xcodebuild -license accept || true
+          xcodebuild -version
+          xcode-select -p
 
       - name: Cache cargo
         uses: actions/cache@v4
