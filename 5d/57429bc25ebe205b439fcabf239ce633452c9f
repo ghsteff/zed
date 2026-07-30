@@ -1,0 +1,20 @@
+crates/editor/src/split.rs
+  s_db54b74c098216::t_d49f99327cb7c7 758-759,761-763
+  s_db54b74c098216::t_74da57be1d9366 635-655
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "5d57429bc25ebe205b439fcabf239ce633452c9f",
+  "prompts": {},
+  "sessions": {
+    "s_db54b74c098216": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "8cdc5387-6ffe-4865-b77c-7d0af5739b20",
+        "model": "grok-4.5"
+      },
+      "human_author": "Grant Steffen <gsteffen1203@gmail.com>"
+    }
+  }
+}
