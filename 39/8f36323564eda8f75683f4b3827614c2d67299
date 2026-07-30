@@ -1,0 +1,19 @@
+crates/git_ui/src/git_panel.rs
+  s_5c710a9df766f5::t_f763e39b373296 997,6114-6118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "398f36323564eda8f75683f4b3827614c2d67299",
+  "prompts": {},
+  "sessions": {
+    "s_5c710a9df766f5": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "4a1a5d20-4b22-484a-8ece-7d24451f2236",
+        "model": "unknown"
+      },
+      "human_author": "Grant Steffen <gsteffen1203@gmail.com>"
+    }
+  }
+}
