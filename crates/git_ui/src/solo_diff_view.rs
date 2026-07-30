@@ -21,7 +21,7 @@ use project::{
     Project,
     git_store::{Repository, RepositoryId},
 };
-use settings::{Settings, SettingsStore, StatusStyle};
+use settings::{DiffViewStyle, Settings, SettingsStore, StatusStyle};
 use std::{
     any::{Any, TypeId},
     ops::Range,
@@ -46,6 +46,8 @@ pub struct SoloDiffView {
     editor: Entity<SplittableEditor>,
     workspace: WeakEntity<Workspace>,
     showing_full_file: bool,
+    /// Added/untracked files have no left-side content in split view.
+    force_unified: bool,
     _settings_subscription: Subscription,
 }
 
@@ -85,6 +87,7 @@ impl SoloDiffView {
 
         let project = workspace_entity.read(cx).project().clone();
         let repo_path = entry.repo_path;
+        let force_unified = entry.status.is_created();
         window.spawn(cx, async move |cx| {
             let buffer = project
                 .update(cx, |project, cx| {
@@ -107,6 +110,7 @@ impl SoloDiffView {
                         buffer,
                         diff,
                         workspace_handle,
+                        force_unified,
                         window,
                         cx,
                     )
@@ -125,6 +129,7 @@ impl SoloDiffView {
         buffer: Entity<Buffer>,
         diff: Entity<buffer_diff::BufferDiff>,
         workspace: Entity<Workspace>,
+        force_unified: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -132,9 +137,14 @@ impl SoloDiffView {
         let showing_full_file = EditorSettings::get_global(cx).file_diff.show_full_file;
         let multibuffer = cx
             .new(|cx| Self::build_multibuffer(buffer.clone(), diff.clone(), showing_full_file, cx));
+        let diff_view_style = if force_unified {
+            DiffViewStyle::Unified
+        } else {
+            EditorSettings::get_global(cx).diff_view_style
+        };
         let editor = cx.new(|cx| {
             let editor = SplittableEditor::new(
-                EditorSettings::get_global(cx).diff_view_style,
+                diff_view_style,
                 multibuffer,
                 project.clone(),
                 workspace.clone(),
@@ -160,6 +170,9 @@ impl SoloDiffView {
         let mut previous_diff_view_style = EditorSettings::get_global(cx).diff_view_style;
         let settings_subscription =
             cx.observe_global_in::<SettingsStore>(window, move |this, window, cx| {
+                if this.force_unified {
+                    return;
+                }
                 let diff_view_style = EditorSettings::get_global(cx).diff_view_style;
                 if diff_view_style != previous_diff_view_style {
                     this.editor.update(cx, |editor, cx| {
@@ -181,6 +194,7 @@ impl SoloDiffView {
             editor,
             workspace: workspace.downgrade(),
             showing_full_file,
+            force_unified,
             _settings_subscription: settings_subscription,
         }
     }
