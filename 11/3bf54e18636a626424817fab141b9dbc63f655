@@ -1,0 +1,19 @@
+crates/agent_ui/src/agent_panel.rs
+  s_5c710a9df766f5::t_314bed7ef5e92d 1173,1576,5528-5632,6250
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "113bf54e18636a626424817fab141b9dbc63f655",
+  "prompts": {},
+  "sessions": {
+    "s_5c710a9df766f5": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "4a1a5d20-4b22-484a-8ece-7d24451f2236",
+        "model": "unknown"
+      },
+      "human_author": "Grant Steffen <gsteffen1203@gmail.com>"
+    }
+  }
+}
