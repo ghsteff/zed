@@ -632,6 +632,27 @@ impl SplittableEditor {
         self.diff_view_style
     }
 
+    pub fn set_diff_view_style(
+        &mut self,
+        style: DiffViewStyle,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.diff_view_style = style;
+        match style {
+            DiffViewStyle::Unified => {
+                if self.is_split() {
+                    self.unsplit(window, cx);
+                }
+            }
+            DiffViewStyle::Split => {
+                if !self.is_split() && !self.too_narrow_for_split {
+                    self.split(window, cx);
+                }
+            }
+        }
+    }
+
     pub fn is_split(&self) -> bool {
         self.lhs.is_some()
     }
@@ -734,12 +755,12 @@ impl SplittableEditor {
                             .ok();
                     })
                     .ok();
-                if style == DiffViewStyle::Split {
-                    this.update(cx, |this, cx| {
+                this.update(cx, |this, cx| {
+                    if this.diff_view_style == DiffViewStyle::Split {
                         this.split(window, cx);
-                    })
-                    .ok();
-                }
+                    }
+                })
+                .ok();
             }
         });
         let split_state = cx.new(|cx| SplitEditorState::new(cx));
