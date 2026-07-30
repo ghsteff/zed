@@ -1,0 +1,21 @@
+crates/git_ui/src/solo_diff_view.rs
+  s_da442717a070e7::t_713f0402946cc6 24
+  s_da442717a070e7::t_422691242fd5ed 49-50
+  s_da442717a070e7::t_5e1daa32597956 90,113,132,140-144,147,173-175,197
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "b2315a530467782a0d728bf73aa8be32977aa50e",
+  "prompts": {},
+  "sessions": {
+    "s_da442717a070e7": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "e9c55f5a-dd0a-4262-bf4a-ee5701853df2",
+        "model": "grok-4.5"
+      },
+      "human_author": "Grant Steffen <gsteffen1203@gmail.com>"
+    }
+  }
+}
